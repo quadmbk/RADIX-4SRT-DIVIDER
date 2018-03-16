@@ -1,0 +1,108 @@
+//This is the datapath module .It should instantiate everything and also create a clock signal
+
+module datapath(input Rsign,			//Take dividend and Divisor
+		 [7:0]Rexp,
+		 [22:0]Rmantissa,
+	   input Dsign,
+		 [7:0]Dexp,
+		 [22:0]Dmantissa,
+	   input clk, resetn,loadR, loadD,loadRreg27, loadDreg27,shiftq,doneq,
+	   output [22:0]q
+	   	
+	  );
+
+wire [31:0]Rfloating754,Dfloating754; //The ouputs of 754registers
+wire [25:0]Rmux_out, Dmux_out; //mux27 outputs
+wire [25:0]R_new, D_new, RJ;  //R and D after subtraction and shifting
+wire [25:0] R27_out, D27_out;
+	
+wire [2:0] q_jplus1; //q[j+1]
+wire [25:0]qd,ps; //the product
+
+//wire shiftq, doneq;
+wire [80:0] q_radix4;
+
+	register754 R
+			(clk,resetn,
+			  Rsign, //the 1 bit sign bit
+	      		  Rexp, // 8 bit exponent field
+	      		  Rmantissa,
+			  Rfloating754
+	 	       ),
+       	
+		   D
+			(clk,resetn,
+                          Dsign, //the 1 bit sign bit
+                          Dexp, // 8 bit exponent field
+                          Dmantissa,
+                          Dfloating754
+                        );
+
+
+	mux27 Rmux
+			({3'b000, Rfloating754[22:0]},
+			 RJ,
+			 loadR,
+			 Rmux_out
+			);
+
+	 mux27 Dmux
+                        ({3'b000, Dfloating754[22:0]},
+                         {3'b000,Dfloating754[22:0]},
+                         loadD,
+                         Dmux_out
+                        );
+
+	/*register27 R_tilde
+			(clk, resetn,
+		  	 Rmux_out, //the input value from the mux
+	          	 loadRreg27,      //the control signal
+		  	 R27_out// output of the register
+		 	);
+
+	 register27 D_tilde
+                        (clk, resetn,
+                         Dmux_out, //the input value from the mux
+                         loadDreg27,      //the control signal
+                         D27_out// output of the register
+                        );
+
+*/
+	quotient_selection qsl
+
+			(Dmux_out[22:19],  //the divisor as x coordinate
+			 Rmux_out[25:19], //the shifted partial remainder as y cordinate			
+			  q_jplus1 //q[j+1] in rbsd form		
+			);
+
+	shift_reg qreg
+			( clk, resetn,
+			   q_jplus1,
+			  shiftq, doneq,
+			 
+			  q_radix4
+
+			);
+	products prod
+			(q_jplus1,
+			 Dmux_out,
+			 qd
+			);
+
+	subtractor sub
+			(Rmux_out,
+			 qd,
+			 ps
+			);
+	sll4 shifter
+		        (ps,
+			 R_new	
+			);
+
+	register27 R_j_1
+			(clk, resetn,
+		  	 R_new, //the input value from the mux
+	          	 1'b1,      //the control signal
+		  	 RJ// output of the register
+		 	);
+endmodule
